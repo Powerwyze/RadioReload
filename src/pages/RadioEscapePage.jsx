@@ -109,6 +109,7 @@ function RadioEscapePage() {
 
   const [selectedPowerMode, setSelectedPowerMode] = useState(DEFAULT_POWER_MODE);
   const [selectedSessionMode, setSelectedSessionMode] = useState('arcade');
+  const [menuStep, setMenuStep] = useState('select');
   const [sessionId, setSessionId] = useState(0);
   const [phase, setPhase] = useState('idle');
   const [hud, setHud] = useState(() => createInitialHud(DEFAULT_POWER_MODE));
@@ -166,6 +167,7 @@ function RadioEscapePage() {
         });
       },
       onGameOver: (reason) => {
+        setMenuStep('select');
         setPhase('game-over');
         setGameOverReason(reason);
       }
@@ -338,8 +340,14 @@ function RadioEscapePage() {
       gameMode
     });
     setGameOverReason('The crowd caught you.');
+    setMenuStep('select');
     setPhase('running');
     setSessionId((current) => current + 1);
+  }
+
+  function openRules(gameMode) {
+    setSelectedSessionMode(gameMode);
+    setMenuStep('confirm');
   }
 
   function resumeRun() {
@@ -348,6 +356,7 @@ function RadioEscapePage() {
 
   function returnHome() {
     sceneRef.current?.setPaused(false);
+    setMenuStep('select');
     setPhase('idle');
     setHud((currentHud) => syncMenuHud(currentHud, selectedPowerMode, 'idle', selectedSessionMode));
   }
@@ -479,87 +488,127 @@ function RadioEscapePage() {
 
                     {!hud.paused ? (
                       <>
-                        <div className="mode-grid">
-                          {POWER_MODE_OPTIONS.map((option) => (
-                            <button
-                              key={option.id}
-                              className={`mode-option ${selectedPowerMode === option.id ? 'selected' : ''}`}
-                              onClick={() => setSelectedPowerMode(option.id)}
-                              type="button"
-                            >
-                              <span className="mode-option-index">
-                                {POWER_MODE_OPTIONS.findIndex((entry) => entry.id === option.id) + 1}
-                              </span>
-                              <strong>{option.title}</strong>
-                              <p>{option.description}</p>
-                            </button>
-                          ))}
-                        </div>
+                        {menuStep === 'select' ? (
+                          <>
+                            <div className="mode-grid">
+                              {POWER_MODE_OPTIONS.map((option) => (
+                                <button
+                                  key={option.id}
+                                  className={`mode-option ${selectedPowerMode === option.id ? 'selected' : ''}`}
+                                  onClick={() => setSelectedPowerMode(option.id)}
+                                  type="button"
+                                >
+                                  <span className="mode-option-index">
+                                    {POWER_MODE_OPTIONS.findIndex((entry) => entry.id === option.id) + 1}
+                                  </span>
+                                  <strong>{option.title}</strong>
+                                  <p>{option.description}</p>
+                                </button>
+                              ))}
+                            </div>
 
-                        <div className="mode-grid session-grid">
-                          <button
-                            className={`mode-option ${selectedSessionMode === 'arcade' ? 'selected' : ''}`}
-                            onClick={() => setSelectedSessionMode('arcade')}
-                            type="button"
-                          >
-                            <span className="mode-option-index">A</span>
-                            <strong>Arcade Run</strong>
-                            <p>Normal run with enemies, pickups, and game over pressure.</p>
-                          </button>
-                          <button
-                            className={`mode-option ${selectedSessionMode === 'test-lab' ? 'selected' : ''}`}
-                            onClick={() => setSelectedSessionMode('test-lab')}
-                            type="button"
-                          >
-                            <span className="mode-option-index">T</span>
-                            <strong>Test Lab</strong>
-                            <p>No enemies. Walk the map, listen, shoot, and press R to retune stations.</p>
-                          </button>
-                        </div>
+                            <div className="mode-grid session-grid">
+                              <button
+                                className={`mode-option ${selectedSessionMode === 'arcade' ? 'selected' : ''}`}
+                                onClick={() => setSelectedSessionMode('arcade')}
+                                type="button"
+                              >
+                                <span className="mode-option-index">A</span>
+                                <strong>Arcade Run</strong>
+                                <p>Normal run with enemies, pickups, and game over pressure.</p>
+                              </button>
+                              <button
+                                className={`mode-option ${selectedSessionMode === 'test-lab' ? 'selected' : ''}`}
+                                onClick={() => setSelectedSessionMode('test-lab')}
+                                type="button"
+                              >
+                                <span className="mode-option-index">T</span>
+                                <strong>Test Lab</strong>
+                                <p>No enemies. Walk the map, listen, shoot, and press R to retune stations.</p>
+                              </button>
+                            </div>
 
-                        <div className="cadence-windows" aria-label="Cadence preview">
-                          {CADENCE_WINDOWS.map((window) => (
-                            <article
-                              className="cadence-window"
-                              key={window.label}
-                              style={{
-                                '--cadence-color': window.colorHex,
-                                '--cadence-speed': `${window.shotGapMs}ms`
-                              }}
-                            >
-                              <p className="panel-chip">Cadence Window</p>
-                              <strong>{window.label}</strong>
-                              <div className="cadence-window-preview" aria-hidden="true">
-                                <div className="cadence-window-wall cadence-window-wall-left" />
-                                <div className="cadence-window-wall cadence-window-wall-right" />
-                                <div className="cadence-window-floor" />
-                                <div className="cadence-window-bullets">
-                                  <span className="cadence-window-bullet cadence-window-bullet-a" />
-                                  <span className="cadence-window-bullet cadence-window-bullet-b" />
-                                  <span className="cadence-window-bullet cadence-window-bullet-c" />
-                                </div>
-                                <div className="cadence-window-hero">
-                                  <span className="cadence-window-shadow" />
-                                  <span className="cadence-window-legs" />
-                                  <span className="cadence-window-body" />
-                                  <span className="cadence-window-head" />
-                                  <span className="cadence-window-arm" />
-                                  <span className="cadence-window-gun" />
-                                  <span className="cadence-window-flash" />
-                                </div>
-                                <div className="cadence-window-target" />
+                            <div className="cadence-windows" aria-label="Cadence preview">
+                              {CADENCE_WINDOWS.map((window) => (
+                                <article
+                                  className="cadence-window"
+                                  key={window.label}
+                                  style={{
+                                    '--cadence-color': window.colorHex,
+                                    '--cadence-speed': `${window.shotGapMs}ms`
+                                  }}
+                                >
+                                  <p className="panel-chip">Cadence Window</p>
+                                  <strong>{window.label}</strong>
+                                  <div className="cadence-window-preview" aria-hidden="true">
+                                    <div className="cadence-window-wall cadence-window-wall-left" />
+                                    <div className="cadence-window-wall cadence-window-wall-right" />
+                                    <div className="cadence-window-floor" />
+                                    <div className="cadence-window-bullets">
+                                      <span className="cadence-window-bullet cadence-window-bullet-a" />
+                                      <span className="cadence-window-bullet cadence-window-bullet-b" />
+                                      <span className="cadence-window-bullet cadence-window-bullet-c" />
+                                    </div>
+                                    <div className="cadence-window-hero">
+                                      <span className="cadence-window-shadow" />
+                                      <span className="cadence-window-legs" />
+                                      <span className="cadence-window-body" />
+                                      <span className="cadence-window-head" />
+                                      <span className="cadence-window-arm" />
+                                      <span className="cadence-window-gun" />
+                                      <span className="cadence-window-flash" />
+                                    </div>
+                                    <div className="cadence-window-target" />
+                                  </div>
+                                  <div className="cadence-window-color">
+                                    <span
+                                      className="cadence-window-swatch"
+                                      style={{ backgroundColor: window.colorHex }}
+                                    />
+                                    <span>{window.colorName}</span>
+                                  </div>
+                                  <p>{window.shotGapMs}ms shot gap</p>
+                                </article>
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <section className="rules-sheet">
+                            <p className="panel-chip">Run Briefing</p>
+                            <div className="rules-grid">
+                              <div className="rules-block">
+                                <span>Mode</span>
+                                <strong>{selectedSessionMode === 'test-lab' ? 'Test Lab' : 'Arcade Run'}</strong>
+                                <p>
+                                  {selectedSessionMode === 'test-lab'
+                                    ? 'Use the full map with records and live cadence, but without enemy pressure.'
+                                    : 'Fight through the map with enemies, ammo management, and station retunes.'}
+                                </p>
                               </div>
-                              <div className="cadence-window-color">
-                                <span
-                                  className="cadence-window-swatch"
-                                  style={{ backgroundColor: window.colorHex }}
-                                />
-                                <span>{window.colorName}</span>
+                              <div className="rules-block">
+                                <span>How To Win</span>
+                                <strong>30 kills or 10 records</strong>
+                                <p>Reach either target first to clear the run.</p>
                               </div>
-                              <p>{window.shotGapMs}ms shot gap</p>
-                            </article>
-                          ))}
-                        </div>
+                              <div className="rules-block">
+                                <span>Ammo</span>
+                                <strong>25 start / +15 record / +5 drop</strong>
+                                <p>Every shot costs one bullet. Some dropped enemies leave extra ammo.</p>
+                              </div>
+                              <div className="rules-block">
+                                <span>Danger</span>
+                                <strong>Enemies scale every 5 kills</strong>
+                                <p>Bad guys get more aggressive as your kill count rises.</p>
+                              </div>
+                            </div>
+                            <ul className="rule-list menu-rule-list">
+                              <li>Move with WASD or the arrow keys.</li>
+                              <li>Press Space to shoot.</li>
+                              <li>Press Esc to pause and return home.</li>
+                              <li>Cadence changes shot frequency only. Bullet speed always stays fast.</li>
+                            </ul>
+                          </section>
+                        )}
                       </>
                     ) : null}
 
@@ -574,22 +623,41 @@ function RadioEscapePage() {
                           </button>
                         </>
                       ) : (
-                        <>
-                          <button
-                            className="arcade-button"
-                            onClick={() => startRun('arcade')}
-                            type="button"
-                          >
-                            {phase === 'game-over' ? 'Restart Arcade' : 'Start Arcade'}
-                          </button>
-                          <button
-                            className="arcade-button alt"
-                            onClick={() => startRun('test-lab')}
-                            type="button"
-                          >
-                            {phase === 'game-over' ? 'Restart Test Lab' : 'Open Test Lab'}
-                          </button>
-                        </>
+                        menuStep === 'select' ? (
+                          <>
+                            <button
+                              className="arcade-button"
+                              onClick={() => openRules('arcade')}
+                              type="button"
+                            >
+                              {phase === 'game-over' ? 'Arcade Rules' : 'Start Arcade'}
+                            </button>
+                            <button
+                              className="arcade-button alt"
+                              onClick={() => openRules('test-lab')}
+                              type="button"
+                            >
+                              {phase === 'game-over' ? 'Test Lab Rules' : 'Open Test Lab'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="arcade-button"
+                              onClick={() => startRun(selectedSessionMode)}
+                              type="button"
+                            >
+                              Start Game
+                            </button>
+                            <button
+                              className="arcade-button alt"
+                              onClick={() => setMenuStep('select')}
+                              type="button"
+                            >
+                              Back
+                            </button>
+                          </>
+                        )
                       )}
                     </div>
                   </div>
@@ -701,22 +769,6 @@ function RadioEscapePage() {
               <span>Win Target</span>
               <strong>{hud.killsToWin} kills / {hud.recordsToWin} records</strong>
             </div>
-          </section>
-
-          <section className="broadcast-card">
-            <p className="panel-chip">Rules</p>
-            <ul className="rule-list">
-              <li>Power score changes shot cadence, not bullet speed.</li>
-              <li>Red means silence or non-music, yellow means normal music, green means strong music energy.</li>
-              <li>You start with 25 bullets. Each record adds 15 ammo. Some bad guys drop 5 ammo.</li>
-              <li>Win by collecting 10 records or dropping 30 bad guys.</li>
-              <li>Every 5 kills raises enemy aggression and speeds them up.</li>
-              <li>Composite Drive blends pulse confidence, onset density, and spectral flux.</li>
-              <li>Flux Drive follows motion across the spectrum.</li>
-              <li>Bass Drive follows low-end kick and bass weight.</li>
-              <li>Arcade mode uses enemies and record pickups. Test Lab has no enemies and uses R to retune.</li>
-              <li>One touch from a bad guy ends the run.</li>
-            </ul>
           </section>
         </aside>
       </section>

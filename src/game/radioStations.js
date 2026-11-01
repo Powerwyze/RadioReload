@@ -64,14 +64,6 @@ export const RADIO_STATIONS = [
     icyMetaInt: 16000
   },
   {
-    name: 'Sphere of Hip-Hop Radio',
-    genre: 'hiphop',
-    tagline: 'Independent Christian hip-hop and rap from Sphere of Hip-Hop Radio.',
-    musicChance: 0.72,
-    streamUrl: 'http://stream.radiojar.com/2b5w4a2kb',
-    icyMetaInt: 16000
-  },
-  {
     name: 'KUTX AMX',
     genre: 'texas',
     tagline: 'All-Austin music on the station\'s HD2 web stream.',
@@ -112,51 +104,11 @@ export const RADIO_STATIONS = [
     icyMetaInt: 16000
   },
   {
-    name: 'WFMU Freeform',
-    genre: 'freeform',
-    tagline: 'WFMU\'s flagship freeform stream from Jersey City.',
-    musicChance: 0.68,
-    streamUrl: 'https://stream0.wfmu.org/freeform-128k',
-    icyMetaInt: 16000
-  },
-  {
-    name: 'WFMU Rock\'n\'Soul',
-    genre: 'freeform',
-    tagline: 'WFMU\'s Rock\'n\'Soul side channel with deeper old-school grooves.',
-    musicChance: 0.7,
-    streamUrl: 'https://stream2.wfmu.org/rocknsoul',
-    icyMetaInt: 16000
-  },
-  {
-    name: 'WFMU Drummer',
-    genre: 'freeform',
-    tagline: 'Give the Drummer Radio from WFMU.',
-    musicChance: 0.63,
-    streamUrl: 'http://stream0.wfmu.org/drummer',
-    icyMetaInt: 16000
-  },
-  {
-    name: 'WFMU Sheena',
-    genre: 'freeform',
-    tagline: 'Sheena\'s Jungle Room from WFMU.',
-    musicChance: 0.61,
-    streamUrl: 'http://stream0.wfmu.org/sheena',
-    icyMetaInt: 16000
-  },
-  {
     name: 'Classical KUSC',
     genre: 'classical',
-    tagline: 'Southern California classical radio on KUSC\'s official AAC stream.',
+    tagline: 'Southern California classical radio on KUSC\'s official MP3 stream.',
     musicChance: 0.62,
-    streamUrl: 'https://27283.live.streamtheworld.com:443/KUSCAAC96_SC',
-    icyMetaInt: 16000
-  },
-  {
-    name: 'Classical California KDFC',
-    genre: 'classical',
-    tagline: 'Bay Area classical music from KDFC\'s official stream.',
-    musicChance: 0.62,
-    streamUrl: 'https://29306.live.streamtheworld.com:443/KDFCFM_SC',
+    streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/KUSCMP128.mp3',
     icyMetaInt: 16000
   },
   {
@@ -173,14 +125,6 @@ export const RADIO_STATIONS = [
     tagline: 'Ibiza Underground\'s live stream with deep house, techno, and underground club sets.',
     musicChance: 0.74,
     streamUrl: 'https://iur.radioca.st/stream',
-    icyMetaInt: 16000
-  },
-  {
-    name: 'Discover Trance Radio',
-    genre: 'edm',
-    tagline: 'A nonstop trance stream from Discover Trance Radio.',
-    musicChance: 0.77,
-    streamUrl: 'http://uk01.discovertrance.com/stream',
     icyMetaInt: 16000
   },
   {

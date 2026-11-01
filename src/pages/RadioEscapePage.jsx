@@ -128,6 +128,9 @@ function RadioEscapePage() {
     audioRef.current = createRadioAudioController({
       onPulse: (nextState) => {
         sceneRef.current?.setPulseState(nextState);
+      },
+      onStationFailed: (stationName) => {
+        sceneRef.current?.handleStationFailure(stationName);
       }
     });
 

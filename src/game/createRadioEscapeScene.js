@@ -11,7 +11,12 @@ import {
 } from './maze';
 import { DEFAULT_POWER_MODE, getPowerMode } from './powerModes';
 import { RADIO_STATIONS } from './radioStations';
-import { getCadenceProfile, getSignalDebug } from './signalModel';
+import {
+  SIGNAL_HISTORY_SIZE,
+  getCadenceProfile,
+  getSignalDebug,
+  getTierProfile
+} from './signalModel';
 
 const PLAYER_START = { row: 11, col: 10 };
 const ENEMY_SPAWNS = [
@@ -36,6 +41,7 @@ const AMMO_DROP_BONUS = 5;
 const RECORDS_TO_WIN = 10;
 const KILLS_TO_WIN = 30;
 const AMMO_DROP_CHANCE = 0.45;
+const MIN_TIER_HOLD_MS = 1500;
 
 function shuffle(list) {
   const next = [...list];
@@ -173,6 +179,8 @@ export class RadioEscapeScene extends Phaser.Scene {
     this.speechBandRatio = 0;
     this.signalState = 'silence';
     this.smoothedPulseBpm = 0;
+    this.signalHistory = [];
+    this.tierChangedAt = 0;
     this.powerScore = 0;
     this.activityTier = 'red';
     this.activityReason = 'silence gate';
@@ -199,23 +207,13 @@ export class RadioEscapeScene extends Phaser.Scene {
     this.pushHud();
   }
 
-  drawBoard() {
+  drawBoard(cadenceProfile = getCadenceProfile(this.analysisMode, { signalState: 'silence' })) {
     if (!this.boardGraphics) {
       this.boardGraphics = this.add.graphics();
     }
     const g = this.boardGraphics;
-    const wallPalette = getWallPalette(
-      getCadenceProfile(this.analysisMode, {
-        signalState: this.signalState,
-        spectralFlux: this.spectralFlux,
-        lowEndEnergy: this.lowEndEnergy,
-        onsetDensity: this.onsetDensity,
-        confidence: this.confidence,
-        pulseStrength: this.pulseStrength,
-        rms: this.rms,
-        smoothedPulseBpm: this.smoothedPulseBpm
-      })
-    );
+    const wallPalette = getWallPalette(cadenceProfile);
+    this.boardTier = cadenceProfile.tier;
 
     g.clear();
     g.fillStyle(0x05070b, 1);
@@ -519,6 +517,8 @@ export class RadioEscapeScene extends Phaser.Scene {
     this.speechBandRatio = 0;
     this.signalState = 'silence';
     this.smoothedPulseBpm = 0;
+    this.signalHistory = [];
+    this.tierChangedAt = 0;
     this.powerScore = 0;
     this.activityTier = 'red';
     this.activityReason = 'silence gate';
@@ -530,6 +530,16 @@ export class RadioEscapeScene extends Phaser.Scene {
       this.gameMode === 'test-lab'
         ? `Tuning station and arming ${this.powerMode.title.toLowerCase()} in test lab. Press R or grab a record to retune.`
         : `Tuning station and arming ${this.powerMode.title.toLowerCase()}.`;
+    this.pushHud();
+  }
+
+  handleStationFailure(stationName) {
+    if (this.isGameOver || !this.station || stationName !== this.station.name) {
+      return;
+    }
+
+    this.switchStation();
+    this.statusText = `${stationName} is off the air. Retuning.`;
     this.pushHud();
   }
 
@@ -568,8 +578,33 @@ export class RadioEscapeScene extends Phaser.Scene {
       signalState: this.signalState,
       smoothedPulseBpm: this.smoothedPulseBpm
     };
-    const cadenceProfile = getCadenceProfile(this.analysisMode, signalMetrics);
-    const signalDebug = getSignalDebug(this.analysisMode, signalMetrics);
+    let cadenceProfile = getCadenceProfile(
+      this.analysisMode,
+      signalMetrics,
+      this.signalHistory,
+      this.activityTier
+    );
+    const now = this.time.now;
+    if (cadenceProfile.tier !== this.activityTier) {
+      // Hold each tier briefly so the gun and walls don't flicker; silence still drops at once.
+      if (this.signalState !== 'silence' && now - this.tierChangedAt < MIN_TIER_HOLD_MS) {
+        cadenceProfile = getTierProfile(this.activityTier, cadenceProfile.powerScore);
+      } else {
+        this.tierChangedAt = now;
+      }
+    }
+    const signalDebug = getSignalDebug(
+      this.analysisMode,
+      signalMetrics,
+      this.signalHistory,
+      cadenceProfile.tier
+    );
+    if (this.signalState !== 'silence') {
+      this.signalHistory.push(cadenceProfile.powerScore);
+      if (this.signalHistory.length > SIGNAL_HISTORY_SIZE) {
+        this.signalHistory.shift();
+      }
+    }
     this.powerScore = cadenceProfile.powerScore;
     this.activityTier = cadenceProfile.tier;
     this.activityReason = signalDebug.reason;
@@ -582,7 +617,9 @@ export class RadioEscapeScene extends Phaser.Scene {
       this.statusText = `${this.powerMode.title} reads ${this.signalState} and is holding ${this.activityTier} tier from ${this.activityReason}. Fire cadence ${this.shotProfileLabel.toLowerCase()}, bullet speed fixed.`;
     }
 
-    this.drawBoard();
+    if (cadenceProfile.tier !== this.boardTier) {
+      this.drawBoard(cadenceProfile);
+    }
   }
 
   setPulseState({
@@ -599,7 +636,7 @@ export class RadioEscapeScene extends Phaser.Scene {
     speechBandRatio,
     signalState
   }) {
-    if (this.isGameOver || stationName !== this.station.name) {
+    if (this.isGameOver || !this.station || stationName !== this.station.name) {
       return;
     }
 
@@ -932,6 +969,11 @@ export class RadioEscapeScene extends Phaser.Scene {
   update(time, delta) {
     if (this.isGameOver || this.isPaused) {
       return;
+    }
+
+    // Holding Space keeps firing at the current cadence; key repeats don't re-emit keydown.
+    if (this.keys.space.isDown && this.ammo > 0) {
+      this.fireBullet();
     }
 
     this.handlePlayerMovement(time);

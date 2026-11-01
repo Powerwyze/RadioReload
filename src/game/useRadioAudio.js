@@ -107,6 +107,15 @@ export function createRadioAudioController(callbacks = {}) {
   let isEnabled = false;
   let activeStationName = RADIO_STATIONS[0]?.name ?? '';
 
+  // Blocked (CORS / mixed content) or offline streams fail here instead of playing silence.
+  audio.addEventListener('error', () => {
+    if (!isEnabled || !audio.getAttribute('src')) {
+      return;
+    }
+
+    callbacks.onStationFailed?.(activeStationName);
+  });
+
   function emitPulse(nextState) {
     callbacks.onPulse?.(nextState);
   }

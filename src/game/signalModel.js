@@ -1,3 +1,19 @@
+// Tiers are relative to the current station: the reading is ranked against its own
+// recent history, so the gun follows drops and builds instead of "is audio playing".
+export const SIGNAL_HISTORY_SIZE = 90; // ~20s at the 220ms pulse rate
+const MIN_HISTORY = 12; // ~2.6s of samples before ranking kicks in
+const GREEN_RANK = 0.6;
+const RED_RANK = 0.2;
+// Hysteresis: once in a tier, the rank has to clearly cross back before it changes.
+const GREEN_EXIT_RANK = 0.42;
+const RED_EXIT_RANK = 0.35;
+
+const MODE_LABELS = {
+  'spectral-flux': 'flux',
+  'low-end-energy': 'bass',
+  composite: 'composite'
+};
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -23,49 +39,55 @@ function getBaseSignal(modeId, metrics) {
   );
 }
 
-function getTier(modeId, metrics) {
-  const baseSignal = getBaseSignal(modeId, metrics);
-
-  if (modeId === 'spectral-flux') {
-    if (baseSignal < 0.008) {
-      return 'red';
-    }
-    return baseSignal >= 0.04 ? 'green' : 'yellow';
+function getRank(value, history) {
+  if (history.length < MIN_HISTORY) {
+    return null;
   }
 
-  if (modeId === 'low-end-energy') {
-    if (baseSignal < 0.005) {
-      return 'red';
-    }
-    return baseSignal >= 0.025 ? 'green' : 'yellow';
-  }
+  const below = history.filter((sample) => sample < value).length;
+  return below / history.length;
+}
 
-  if (baseSignal < 0.015) {
+function getTier(modeId, metrics, history, previousTier) {
+  if (metrics.signalState === 'silence') {
     return 'red';
   }
 
-  return baseSignal >= 0.06 ? 'green' : 'yellow';
-}
-
-export function getSignalDebug(modeId, metrics) {
-  const modeScore = getBaseSignal(modeId, metrics);
-
-  if (modeId === 'spectral-flux') {
-    return {
-      reason: modeScore >= 0.04 ? 'direct flux high' : modeScore < 0.008 ? 'direct flux low' : 'direct flux',
-      modeScore
-    };
+  const rank = getRank(getBaseSignal(modeId, metrics), history);
+  if (rank === null) {
+    return 'yellow';
   }
 
-  if (modeId === 'low-end-energy') {
-    return {
-      reason: modeScore >= 0.025 ? 'direct bass high' : modeScore < 0.005 ? 'direct bass low' : 'direct bass',
-      modeScore
-    };
+  const greenFloor = previousTier === 'green' ? GREEN_EXIT_RANK : GREEN_RANK;
+  const redCeiling = previousTier === 'red' ? RED_EXIT_RANK : RED_RANK;
+
+  if (rank >= greenFloor) {
+    return 'green';
+  }
+
+  return rank < redCeiling ? 'red' : 'yellow';
+}
+
+// `tier` is the tier actually in effect (after any hold), so the reason matches the gun.
+export function getSignalDebug(modeId, metrics, history = [], tier = 'yellow') {
+  const modeScore = getBaseSignal(modeId, metrics);
+  const label = MODE_LABELS[modeId] ?? MODE_LABELS.composite;
+
+  if (metrics.signalState === 'silence') {
+    return { reason: 'silence gate', modeScore };
+  }
+
+  if (getRank(modeScore, history) === null) {
+    return { reason: `${label} warming up`, modeScore };
   }
 
   return {
-    reason: modeScore >= 0.06 ? 'direct composite high' : modeScore < 0.015 ? 'direct composite low' : 'direct composite',
+    reason:
+      tier === 'green'
+        ? `${label} peaking for this station`
+        : tier === 'red'
+          ? `${label} low for this station`
+          : `${label} steady`,
     modeScore
   };
 }
@@ -74,14 +96,18 @@ export function getModeScore(modeId, metrics) {
   return getBaseSignal(modeId, metrics);
 }
 
-export function getActivityTier(modeId, metrics) {
-  return getTier(modeId, metrics);
+export function getActivityTier(modeId, metrics, history = [], previousTier = null) {
+  return getTier(modeId, metrics, history, previousTier);
 }
 
-export function getCadenceProfile(modeId, metrics) {
-  const tier = getTier(modeId, metrics);
-  const modeScore = getBaseSignal(modeId, metrics);
+export function getCadenceProfile(modeId, metrics, history = [], previousTier = null) {
+  return getTierProfile(
+    getTier(modeId, metrics, history, previousTier),
+    getBaseSignal(modeId, metrics)
+  );
+}
 
+export function getTierProfile(tier, modeScore = 0) {
   if (tier === 'green') {
     return {
       tier,

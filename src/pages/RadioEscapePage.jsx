@@ -373,8 +373,8 @@ function RadioEscapePage() {
         <h1>Radio Reload: Dead Air Run</h1>
         <p className="radio-lead">
           Pick a power reader before the run starts. The live stream can now arm
-          the weapon with a composite rhythm model, pure spectral motion, or raw
-          low-end punch while bullet speed stays fast in every mode.
+          the weapon with raw low-end punch, a composite rhythm model, or pure
+          spectral motion while bullet speed stays fast in every mode.
         </p>
       </header>
 

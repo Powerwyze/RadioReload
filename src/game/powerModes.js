@@ -1,4 +1,11 @@
+// The first option is the default. Bass Drive leads because it tracked loudness most
+// closely and switched tiers least across live genre tests.
 export const POWER_MODE_OPTIONS = [
+  {
+    id: 'low-end-energy',
+    title: 'Bass Drive',
+    description: 'Weapon power follows kick and bass weight in the low-end band.'
+  },
   {
     id: 'composite',
     title: 'Composite Drive',
@@ -8,11 +15,6 @@ export const POWER_MODE_OPTIONS = [
     id: 'spectral-flux',
     title: 'Flux Drive',
     description: 'Weapon power follows how much the frequency picture changes frame to frame.'
-  },
-  {
-    id: 'low-end-energy',
-    title: 'Bass Drive',
-    description: 'Weapon power follows kick and bass weight in the low-end band.'
   }
 ];
 

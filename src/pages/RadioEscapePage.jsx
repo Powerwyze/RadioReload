@@ -2,11 +2,7 @@ import React, { startTransition, useEffect, useLayoutEffect, useRef, useState } 
 import Phaser from 'phaser';
 import { RadioEscapeScene } from '../game/createRadioEscapeScene';
 import { MAZE_ROWS, TILE_SIZE } from '../game/maze';
-import {
-  DEFAULT_POWER_MODE,
-  POWER_MODE_OPTIONS,
-  getPowerMode
-} from '../game/powerModes';
+import { POWER_MODE } from '../game/powerModes';
 import { createRadioAudioController } from '../game/useRadioAudio';
 import { RADIO_STATIONS } from '../game/radioStations';
 
@@ -33,8 +29,8 @@ const CADENCE_WINDOWS = [
   }
 ];
 
-function createInitialHud(powerModeId = DEFAULT_POWER_MODE) {
-  const powerMode = getPowerMode(powerModeId);
+function createInitialHud() {
+  const powerMode = POWER_MODE;
   const openingStation = RADIO_STATIONS[0];
 
   return {
@@ -70,13 +66,13 @@ function createInitialHud(powerModeId = DEFAULT_POWER_MODE) {
     aggressionLevel: 0,
     recordsToWin: 10,
     killsToWin: 30,
-    statusText: `Choose ${powerMode.title.toLowerCase()} and the menu will preview the station feed.`,
+    statusText: 'Pick a run and the menu will preview the station feed.',
     canShoot: false
   };
 }
 
-function syncMenuHud(previousHud, powerModeId, phase, gameMode) {
-  const powerMode = getPowerMode(powerModeId);
+function syncMenuHud(previousHud, phase, gameMode) {
+  const powerMode = POWER_MODE;
   const signalLabel =
     previousHud.signalState === 'music'
       ? 'music'
@@ -93,8 +89,8 @@ function syncMenuHud(previousHud, powerModeId, phase, gameMode) {
     canShoot: false,
     statusText:
       phase === 'game-over'
-        ? `Previewing ${previousHud.stationName} from your last run. Current read is ${signalLabel}. Pick ${powerMode.title.toLowerCase()} and restart when ready.`
-        : `Choose ${powerMode.title.toLowerCase()} and the menu will preview the station feed.`
+        ? `Previewing ${previousHud.stationName} from your last run. Current read is ${signalLabel}. Restart when ready.`
+        : 'Pick a run and the menu will preview the station feed.'
   };
 }
 
@@ -107,12 +103,11 @@ function RadioEscapePage() {
   const sceneRef = useRef(null);
   const audioRef = useRef(null);
 
-  const [selectedPowerMode, setSelectedPowerMode] = useState(DEFAULT_POWER_MODE);
   const [selectedSessionMode, setSelectedSessionMode] = useState('arcade');
   const [menuStep, setMenuStep] = useState('select');
   const [sessionId, setSessionId] = useState(0);
   const [phase, setPhase] = useState('idle');
-  const [hud, setHud] = useState(() => createInitialHud(DEFAULT_POWER_MODE));
+  const [hud, setHud] = useState(() => createInitialHud());
   const [gameOverReason, setGameOverReason] = useState('The crowd caught you.');
   const [canvasSize, setCanvasSize] = useState({
     width: GAME_WIDTH,
@@ -145,8 +140,8 @@ function RadioEscapePage() {
       return;
     }
 
-    setHud((currentHud) => syncMenuHud(currentHud, selectedPowerMode, phase, selectedSessionMode));
-  }, [phase, selectedPowerMode, selectedSessionMode]);
+    setHud((currentHud) => syncMenuHud(currentHud, phase, selectedSessionMode));
+  }, [phase, selectedSessionMode]);
 
   useEffect(() => {
     if (!sessionId || !gameHostRef.current) {
@@ -154,7 +149,6 @@ function RadioEscapePage() {
     }
 
     const scene = new RadioEscapeScene({
-      analysisMode: selectedPowerMode,
       gameMode: selectedSessionMode,
       onHudChange: (nextHud) => {
         startTransition(() => {
@@ -204,7 +198,7 @@ function RadioEscapePage() {
       gameRef.current = null;
       game.destroy(true);
     };
-  }, [sessionId, selectedPowerMode, selectedSessionMode]);
+  }, [sessionId, selectedSessionMode]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -333,13 +327,13 @@ function RadioEscapePage() {
       overlayObserver.disconnect();
       window.removeEventListener('resize', fitMenu);
     };
-  }, [phase, selectedPowerMode, gameOverReason]);
+  }, [phase, gameOverReason]);
 
   function startRun(gameMode = selectedSessionMode) {
     audioRef.current?.resume();
     setSelectedSessionMode(gameMode);
     setHud({
-      ...createInitialHud(selectedPowerMode),
+      ...createInitialHud(),
       gameMode
     });
     setGameOverReason('The crowd caught you.');
@@ -361,7 +355,7 @@ function RadioEscapePage() {
     sceneRef.current?.setPaused(false);
     setMenuStep('select');
     setPhase('idle');
-    setHud((currentHud) => syncMenuHud(currentHud, selectedPowerMode, 'idle', selectedSessionMode));
+    setHud((currentHud) => syncMenuHud(currentHud, 'idle', selectedSessionMode));
   }
 
   const phaseClass = phase === 'running' ? 'running-phase' : 'menu-phase';
@@ -372,9 +366,8 @@ function RadioEscapePage() {
         <p className="radio-kicker">Arcade Prototype</p>
         <h1>Radio Reload: Dead Air Run</h1>
         <p className="radio-lead">
-          Pick a power reader before the run starts. The live stream can now arm
-          the weapon with raw low-end punch, a composite rhythm model, or pure
-          spectral motion while bullet speed stays fast in every mode.
+          The live stream's bass arms the weapon: heavy low end means rapid
+          fire, thin low end slows it down, and bullet speed always stays fast.
         </p>
       </header>
 
@@ -389,10 +382,6 @@ function RadioEscapePage() {
                   ? 'Speech'
                   : 'Silence'}
             </strong>
-          </div>
-          <div>
-            <span>Power Mode</span>
-            <strong>{hud.powerModeTitle}</strong>
           </div>
           <div>
             <span>Records Flipped</span>
@@ -412,8 +401,7 @@ function RadioEscapePage() {
           <p className="panel-chip">Core Loop</p>
           <p>
             Build power from the live signal, keep lanes open, and use record
-            pickups to flip stations until the reader you chose starts feeding
-            the gun.
+            pickups to flip stations until the bass starts feeding the gun.
           </p>
         </div>
       </section>
@@ -479,11 +467,11 @@ function RadioEscapePage() {
                         ? gameOverReason
                         : hud.paused
                           ? 'Broadcast paused.'
-                          : 'Choose the signal reader that powers the gun.'}
+                          : 'The station\'s bass powers your gun.'}
                     </h3>
                     <p>
                       {phase === 'game-over'
-                        ? 'Switch the reader if you want a different feel, then restart the run.'
+                        ? 'Pick a run and go again when you\'re ready.'
                         : hud.paused
                           ? 'Press Esc again or use Resume to jump back into the station.'
                           : 'Move with WASD or arrows. Press Space to shoot. Slow power means fewer shots, but bullets always fly fast.'}
@@ -493,23 +481,6 @@ function RadioEscapePage() {
                       <>
                         {menuStep === 'select' ? (
                           <>
-                            <div className="mode-grid">
-                              {POWER_MODE_OPTIONS.map((option) => (
-                                <button
-                                  key={option.id}
-                                  className={`mode-option ${selectedPowerMode === option.id ? 'selected' : ''}`}
-                                  onClick={() => setSelectedPowerMode(option.id)}
-                                  type="button"
-                                >
-                                  <span className="mode-option-index">
-                                    {POWER_MODE_OPTIONS.findIndex((entry) => entry.id === option.id) + 1}
-                                  </span>
-                                  <strong>{option.title}</strong>
-                                  <p>{option.description}</p>
-                                </button>
-                              ))}
-                            </div>
-
                             <div className="mode-grid session-grid">
                               <button
                                 className={`mode-option ${selectedSessionMode === 'arcade' ? 'selected' : ''}`}
@@ -727,10 +698,6 @@ function RadioEscapePage() {
             <div>
               <span>Trigger</span>
               <strong>{hud.activityReason}</strong>
-            </div>
-            <div>
-              <span>Power Mode</span>
-              <strong>{hud.powerModeTitle}</strong>
             </div>
             <div>
               <span>Spectral Flux</span>

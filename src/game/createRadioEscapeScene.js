@@ -9,7 +9,7 @@ import {
   randomFloorCell,
   worldToCell
 } from './maze';
-import { DEFAULT_POWER_MODE, getPowerMode } from './powerModes';
+import { POWER_MODE } from './powerModes';
 import { RADIO_STATIONS } from './radioStations';
 import {
   SIGNAL_HISTORY_SIZE,
@@ -144,15 +144,13 @@ export class RadioEscapeScene extends Phaser.Scene {
     onHudChange,
     onGameOver,
     onPauseChange,
-    analysisMode = DEFAULT_POWER_MODE,
     gameMode = 'arcade'
   }) {
     super('RadioEscapeScene');
     this.onHudChange = onHudChange;
     this.onGameOver = onGameOver;
     this.onPauseChange = onPauseChange;
-    this.analysisMode = analysisMode;
-    this.powerMode = getPowerMode(analysisMode);
+    this.powerMode = POWER_MODE;
     this.gameMode = gameMode;
   }
 
@@ -207,7 +205,7 @@ export class RadioEscapeScene extends Phaser.Scene {
     this.pushHud();
   }
 
-  drawBoard(cadenceProfile = getCadenceProfile(this.analysisMode, { signalState: 'silence' })) {
+  drawBoard(cadenceProfile = getCadenceProfile({ signalState: 'silence' })) {
     if (!this.boardGraphics) {
       this.boardGraphics = this.add.graphics();
     }
@@ -579,7 +577,6 @@ export class RadioEscapeScene extends Phaser.Scene {
       smoothedPulseBpm: this.smoothedPulseBpm
     };
     let cadenceProfile = getCadenceProfile(
-      this.analysisMode,
       signalMetrics,
       this.signalHistory,
       this.activityTier
@@ -594,7 +591,6 @@ export class RadioEscapeScene extends Phaser.Scene {
       }
     }
     const signalDebug = getSignalDebug(
-      this.analysisMode,
       signalMetrics,
       this.signalHistory,
       cadenceProfile.tier

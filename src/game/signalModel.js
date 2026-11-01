@@ -1,4 +1,4 @@
-// Tiers are relative to the current station: the reading is ranked against its own
+// Tiers are relative to the current station: the bass reading is ranked against its own
 // recent history, so the gun follows drops and builds instead of "is audio playing".
 export const SIGNAL_HISTORY_SIZE = 90; // ~20s at the 220ms pulse rate
 const MIN_HISTORY = 12; // ~2.6s of samples before ranking kicks in
@@ -8,35 +8,12 @@ const RED_RANK = 0.2;
 const GREEN_EXIT_RANK = 0.42;
 const RED_EXIT_RANK = 0.35;
 
-const MODE_LABELS = {
-  'spectral-flux': 'flux',
-  'low-end-energy': 'bass',
-  composite: 'composite'
-};
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function getBaseSignal(modeId, metrics) {
-  if (modeId === 'spectral-flux') {
-    return clamp(metrics.spectralFlux ?? 0, 0, 1);
-  }
-
-  if (modeId === 'low-end-energy') {
-    return clamp(metrics.lowEndEnergy ?? 0, 0, 1);
-  }
-
-  return clamp(
-    (
-      (metrics.pulseStrength ?? 0) +
-      (metrics.confidence ?? 0) +
-      (metrics.onsetDensity ?? 0) +
-      (metrics.spectralFlux ?? 0)
-    ) / 4,
-    0,
-    1
-  );
+function getBaseSignal(metrics) {
+  return clamp(metrics.lowEndEnergy ?? 0, 0, 1);
 }
 
 function getRank(value, history) {
@@ -48,12 +25,12 @@ function getRank(value, history) {
   return below / history.length;
 }
 
-function getTier(modeId, metrics, history, previousTier) {
+function getTier(metrics, history, previousTier) {
   if (metrics.signalState === 'silence') {
     return 'red';
   }
 
-  const rank = getRank(getBaseSignal(modeId, metrics), history);
+  const rank = getRank(getBaseSignal(metrics), history);
   if (rank === null) {
     return 'yellow';
   }
@@ -69,42 +46,30 @@ function getTier(modeId, metrics, history, previousTier) {
 }
 
 // `tier` is the tier actually in effect (after any hold), so the reason matches the gun.
-export function getSignalDebug(modeId, metrics, history = [], tier = 'yellow') {
-  const modeScore = getBaseSignal(modeId, metrics);
-  const label = MODE_LABELS[modeId] ?? MODE_LABELS.composite;
+export function getSignalDebug(metrics, history = [], tier = 'yellow') {
+  const modeScore = getBaseSignal(metrics);
 
   if (metrics.signalState === 'silence') {
     return { reason: 'silence gate', modeScore };
   }
 
   if (getRank(modeScore, history) === null) {
-    return { reason: `${label} warming up`, modeScore };
+    return { reason: 'bass warming up', modeScore };
   }
 
   return {
     reason:
       tier === 'green'
-        ? `${label} peaking for this station`
+        ? 'bass peaking for this station'
         : tier === 'red'
-          ? `${label} low for this station`
-          : `${label} steady`,
+          ? 'bass low for this station'
+          : 'bass steady',
     modeScore
   };
 }
 
-export function getModeScore(modeId, metrics) {
-  return getBaseSignal(modeId, metrics);
-}
-
-export function getActivityTier(modeId, metrics, history = [], previousTier = null) {
-  return getTier(modeId, metrics, history, previousTier);
-}
-
-export function getCadenceProfile(modeId, metrics, history = [], previousTier = null) {
-  return getTierProfile(
-    getTier(modeId, metrics, history, previousTier),
-    getBaseSignal(modeId, metrics)
-  );
+export function getCadenceProfile(metrics, history = [], previousTier = null) {
+  return getTierProfile(getTier(metrics, history, previousTier), getBaseSignal(metrics));
 }
 
 export function getTierProfile(tier, modeScore = 0) {

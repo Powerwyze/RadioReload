@@ -76,6 +76,7 @@ export function createRadioAudioController(callbacks = {}) {
   const analysisContext = AudioContextClass ? new AudioContextClass() : null;
   const analysisState = {
     source: null,
+    outputGain: null,
     outputConnected: false,
     metricsAnalyser: null,
     metricsData: null,
@@ -105,7 +106,19 @@ export function createRadioAudioController(callbacks = {}) {
   };
 
   let isEnabled = false;
+  let isMuted = false;
   let activeStationName = RADIO_STATIONS[0]?.name ?? '';
+
+  // Mute only the speakers. The analysers sit before the output gain, so the bass still
+  // drives the Tune Ray while the room is quiet.
+  function applyMute() {
+    const gain = analysisState.outputGain;
+    if (gain) {
+      gain.gain.setTargetAtTime(isMuted ? 0 : 1, analysisContext.currentTime, 0.02);
+    } else if (!analysisContext) {
+      audio.muted = isMuted;
+    }
+  }
 
   // Blocked (CORS / mixed content) or offline streams fail here instead of playing silence.
   audio.addEventListener('error', () => {
@@ -416,7 +429,10 @@ export function createRadioAudioController(callbacks = {}) {
       });
 
       if (!analysisState.outputConnected) {
-        analysisState.source.connect(analysisContext.destination);
+        analysisState.outputGain = analysisContext.createGain();
+        analysisState.outputGain.gain.value = isMuted ? 0 : 1;
+        analysisState.source.connect(analysisState.outputGain);
+        analysisState.outputGain.connect(analysisContext.destination);
         analysisState.outputConnected = true;
       }
       analysisState.source.connect(analysisState.metricsAnalyser);
@@ -485,6 +501,11 @@ export function createRadioAudioController(callbacks = {}) {
       await syncPlayback();
     },
 
+    setMuted(muted) {
+      isMuted = Boolean(muted);
+      applyMute();
+    },
+
     stop() {
       isEnabled = false;
       audio.pause();
@@ -499,6 +520,7 @@ export function createRadioAudioController(callbacks = {}) {
       audio.pause();
       analysisState.analyzer?.disconnect();
       analysisState.source?.disconnect();
+      analysisState.outputGain?.disconnect();
       stopMetricsMonitor();
       stopHealthMonitor();
       resetPulseState(false);

@@ -82,6 +82,7 @@ export const HOW_TO_PLAY = [
   { keys: 'WASD / Arrows', text: 'Move Spin through the floor.' },
   { keys: 'Space', text: 'Fire the Tune Ray. Hold it to keep firing.' },
   { keys: 'Esc', text: 'Pause the broadcast.' },
+  { keys: 'M', text: 'Mute the radio. The bass still drives the Tune Ray.' },
   { keys: 'K-records', text: 'Retune to a fresh station, add 15 charge and count toward the elevator.' },
   { keys: 'Bass', text: 'Heavy bass means rapid fire. Thin bass or dead air makes the Tune Ray drag.' },
   { keys: 'Signal bars', text: 'Three hits and Spin goes down. Clearing a floor restores them.' }

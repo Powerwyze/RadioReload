@@ -65,7 +65,7 @@ button {
 
 .rr-topbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 14px;
   padding: 8px 12px;
@@ -143,6 +143,38 @@ button {
 .rr-floorbadge strong {
   color: var(--gold);
   font-weight: 400;
+}
+
+.rr-mute {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--pixel-font);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.rr-mute:hover {
+  border-color: var(--tier);
+}
+
+.rr-mute:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.rr-mute.muted {
+  color: var(--muted);
+}
+
+.mute-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .rr-body {
@@ -1003,7 +1035,11 @@ kbd {
   }
 
   .rr-topbar {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .rr-mute span {
+    display: none;
   }
 
   .rr-onair {

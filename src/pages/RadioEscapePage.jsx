@@ -14,6 +14,7 @@ const GAME_WIDTH = MAZE_COLS * TILE_SIZE;
 const GAME_HEIGHT = MAZE_ROW_COUNT * TILE_SIZE;
 const BEST_KEY = 'radio-reload-best';
 const INTRO_KEY = 'radio-reload-intro-seen';
+const MUTE_KEY = 'radio-reload-muted';
 const TIER_LABELS = {
   green: { name: 'Rapid', note: 'Bass is peaking' },
   yellow: { name: 'Normal', note: 'Bass is steady' },
@@ -87,6 +88,20 @@ function signalLabel(state) {
   return 'Dead air';
 }
 
+// A pixel speaker: sound waves when live, an X when muted.
+function SpeakerIcon({ muted }) {
+  return (
+    <svg aria-hidden="true" className="mute-icon" shapeRendering="crispEdges" viewBox="0 0 16 16">
+      <path d="M1 6h3v4H1zM4 5h1v6H4zM5 4h1v8H5zM6 3h1v10H6zM7 2h1v12H7z" fill="currentColor" />
+      {muted ? (
+        <path d="M10 5h1v1h-1zM11 6h1v1h-1zM12 7h1v2h-1zM13 6h1v1h-1zM14 5h1v1h-1zM11 9h1v1h-1zM10 10h1v1h-1zM13 9h1v1h-1zM14 10h1v1h-1z" fill="currentColor" />
+      ) : (
+        <path d="M10 6h1v4h-1zM12 4h1v1h-1zM13 5h1v6h-1zM12 11h1v1h-1z" fill="currentColor" />
+      )}
+    </svg>
+  );
+}
+
 function RadioEscapePage() {
   const gameHostRef = useRef(null);
   const gameStageRef = useRef(null);
@@ -101,6 +116,7 @@ function RadioEscapePage() {
   const [best, setBest] = useState(() => Number(readStorage(BEST_KEY, 0)) || 0);
   const [introReturn, setIntroReturn] = useState('play');
   const [canvasSize, setCanvasSize] = useState({ width: GAME_WIDTH, height: GAME_HEIGHT });
+  const [muted, setMuted] = useState(() => readStorage(MUTE_KEY, '') === 'yes');
 
   useEffect(() => {
     audioRef.current = createRadioAudioController({
@@ -116,6 +132,22 @@ function RadioEscapePage() {
       audioRef.current?.destroy();
       audioRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    audioRef.current?.setMuted(muted);
+    writeStorage(MUTE_KEY, muted ? 'yes' : 'no');
+  }, [muted]);
+
+  // M toggles mute on every screen.
+  useEffect(() => {
+    function onKey(event) {
+      if (event.code === 'KeyM' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        setMuted((value) => !value);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   function recordScore(summary) {
@@ -326,6 +358,20 @@ function RadioEscapePage() {
             <strong>{best}</strong>
           </div>
         )}
+        <button
+          aria-label={muted ? 'Unmute radio (M)' : 'Mute radio (M)'}
+          aria-pressed={muted}
+          className={`rr-mute ${muted ? 'muted' : ''}`}
+          onClick={(event) => {
+            setMuted((value) => !value);
+            event.currentTarget.blur();
+          }}
+          title={muted ? 'Unmute (M)' : 'Mute (M)'}
+          type="button"
+        >
+          <SpeakerIcon muted={muted} />
+          <span>{muted ? 'Muted' : 'Sound'}</span>
+        </button>
       </header>
 
       <section className="rr-body">

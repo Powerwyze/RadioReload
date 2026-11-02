@@ -1,42 +1,15 @@
-export const TILE_SIZE = 44;
+// Every sprite and tile is 16px art drawn at 3x, so one maze cell is 48px.
+export const PIXEL_SCALE = 3;
+export const TILE_SIZE = 16 * PIXEL_SCALE;
+export const MAZE_COLS = 21;
+export const MAZE_ROW_COUNT = 17;
 
-export const MAZE_ROWS = [
-  '#####################',
-  '#.....#.......#.....#',
-  '#.###.#.#####.#.###.#',
-  '#.#...#...#...#...#.#',
-  '#.#.#####.#.#####.#.#',
-  '#...#.....#.....#...#',
-  '###.#.###.#.###.#.###',
-  '#.....#.......#.....#',
-  '#.#####.##.##.#####.#',
-  '#.......#...#.......#',
-  '#.#####.#.#.#.#####.#',
-  '#.....#.......#.....#',
-  '###.#.###.#.###.#.###',
-  '#...#.....#.....#...#',
-  '#.#.#####.#.#####.#.#',
-  '#.#...#...#...#...#.#',
-  '#####################'
+const STEPS = [
+  { dx: 0, dy: -1 },
+  { dx: 0, dy: 1 },
+  { dx: -1, dy: 0 },
+  { dx: 1, dy: 0 }
 ];
-
-export const WALKABLE_CELLS = [];
-
-for (let row = 0; row < MAZE_ROWS.length; row += 1) {
-  for (let col = 0; col < MAZE_ROWS[row].length; col += 1) {
-    if (MAZE_ROWS[row][col] !== '#') {
-      WALKABLE_CELLS.push({ row, col });
-    }
-  }
-}
-
-export function isWalkableCell(row, col) {
-  if (row < 0 || col < 0 || row >= MAZE_ROWS.length || col >= MAZE_ROWS[0].length) {
-    return false;
-  }
-
-  return MAZE_ROWS[row][col] !== '#';
-}
 
 export function cellToWorld(row, col) {
   return {
@@ -52,65 +25,82 @@ export function worldToCell(x, y) {
   };
 }
 
-export function randomFloorCell(rng = Math.random, exclusions = []) {
-  const blacklist = new Set(exclusions.map(({ row, col }) => `${row}:${col}`));
-  const candidates = WALKABLE_CELLS.filter(
-    ({ row, col }) => !blacklist.has(`${row}:${col}`)
-  );
-  return candidates[Math.floor(rng() * candidates.length)];
+export function manhattan(a, b) {
+  return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
 }
 
-export function getNeighbors(row, col) {
-  return [
-    { row: row - 1, col, dx: 0, dy: -1 },
-    { row: row + 1, col, dx: 0, dy: 1 },
-    { row, col: col - 1, dx: -1, dy: 0 },
-    { row, col: col + 1, dx: 1, dy: 0 }
-  ].filter(({ row: nextRow, col: nextCol }) => isWalkableCell(nextRow, nextCol));
-}
+// Wraps one floor layout. Only '.' is walkable; '#', the engine and the booth are not.
+export function createMaze(rows) {
+  const charAt = (row, col) => rows[row]?.[col] ?? '#';
+  const isWalkable = (row, col) => charAt(row, col) === '.';
 
-export function findNextStep(start, goal) {
-  if (start.row === goal.row && start.col === goal.col) {
-    return start;
+  const walkableCells = [];
+  rows.forEach((line, row) => {
+    line.split('').forEach((char, col) => {
+      if (char === '.') {
+        walkableCells.push({ row, col });
+      }
+    });
+  });
+
+  function getNeighbors(row, col) {
+    return STEPS.map(({ dx, dy }) => ({ row: row + dy, col: col + dx, dx, dy })).filter(
+      (cell) => isWalkable(cell.row, cell.col)
+    );
   }
 
-  const startKey = `${start.row}:${start.col}`;
-  const goalKey = `${goal.row}:${goal.col}`;
-  const queue = [start];
-  const visited = new Set([startKey]);
-  const parents = new Map();
+  function randomFloorCell(rng = Math.random, exclusions = [], avoid = null, minDistance = 0) {
+    const blacklist = new Set(exclusions.map(({ row, col }) => `${row}:${col}`));
+    const candidates = walkableCells.filter(
+      (cell) =>
+        !blacklist.has(`${cell.row}:${cell.col}`) &&
+        (!avoid || manhattan(cell, avoid) >= minDistance)
+    );
+    const pool = candidates.length ? candidates : walkableCells;
+    return pool[Math.floor(rng() * pool.length)];
+  }
 
-  while (queue.length) {
-    const current = queue.shift();
-    const currentKey = `${current.row}:${current.col}`;
-
-    if (currentKey === goalKey) {
-      break;
+  // One BFS step from start toward goal; returns start when the goal is unreachable.
+  function findNextStep(start, goal) {
+    if (start.row === goal.row && start.col === goal.col) {
+      return start;
     }
 
-    for (const neighbor of getNeighbors(current.row, current.col)) {
-      const key = `${neighbor.row}:${neighbor.col}`;
-      if (visited.has(key)) {
-        continue;
+    const startKey = `${start.row}:${start.col}`;
+    const goalKey = `${goal.row}:${goal.col}`;
+    const queue = [start];
+    const visited = new Set([startKey]);
+    const parents = new Map();
+
+    while (queue.length) {
+      const current = queue.shift();
+      if (`${current.row}:${current.col}` === goalKey) {
+        break;
       }
 
-      visited.add(key);
-      parents.set(key, current);
-      queue.push({ row: neighbor.row, col: neighbor.col });
+      for (const neighbor of getNeighbors(current.row, current.col)) {
+        const key = `${neighbor.row}:${neighbor.col}`;
+        if (visited.has(key)) {
+          continue;
+        }
+        visited.add(key);
+        parents.set(key, current);
+        queue.push({ row: neighbor.row, col: neighbor.col });
+      }
     }
+
+    if (!parents.has(goalKey)) {
+      return start;
+    }
+
+    let step = goal;
+    let parent = parents.get(goalKey);
+    while (parent && `${parent.row}:${parent.col}` !== startKey) {
+      step = parent;
+      parent = parents.get(`${parent.row}:${parent.col}`);
+    }
+    return step;
   }
 
-  if (!parents.has(goalKey)) {
-    return start;
-  }
-
-  let step = goal;
-  let parent = parents.get(goalKey);
-
-  while (parent && `${parent.row}:${parent.col}` !== startKey) {
-    step = parent;
-    parent = parents.get(`${parent.row}:${parent.col}`);
-  }
-
-  return step;
+  return { rows, charAt, isWalkable, walkableCells, getNeighbors, randomFloorCell, findNextStep };
 }

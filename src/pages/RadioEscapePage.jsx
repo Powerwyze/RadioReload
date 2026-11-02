@@ -1,51 +1,52 @@
 import React, { startTransition, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
+import { Cutscene } from '../components/Cutscene';
+import { PanelCanvas, PixelSprite } from '../components/PixelArt';
+import { TIER_COLORS } from '../game/art/palette';
 import { RadioEscapeScene } from '../game/createRadioEscapeScene';
-import { MAZE_ROWS, TILE_SIZE } from '../game/maze';
-import { POWER_MODE } from '../game/powerModes';
-import { createRadioAudioController } from '../game/useRadioAudio';
+import { FLOORS } from '../game/floors';
+import { MAZE_COLS, MAZE_ROW_COUNT, TILE_SIZE } from '../game/maze';
 import { RADIO_STATIONS } from '../game/radioStations';
+import { ENDING_PANELS, GAME_OVER_LINES, HOW_TO_PLAY, INTRO_PANELS } from '../game/story';
+import { createRadioAudioController } from '../game/useRadioAudio';
 
-const GAME_WIDTH = MAZE_ROWS[0].length * TILE_SIZE;
-const GAME_HEIGHT = MAZE_ROWS.length * TILE_SIZE;
-const CADENCE_WINDOWS = [
-  {
-    label: 'Rapid',
-    colorName: 'Neon Green',
-    colorHex: '#56ff8a',
-    shotGapMs: 145
-  },
-  {
-    label: 'Normal',
-    colorName: 'Yellow',
-    colorHex: '#ffd54a',
-    shotGapMs: 630
-  },
-  {
-    label: 'Dragging',
-    colorName: 'Red',
-    colorHex: '#ff5a6b',
-    shotGapMs: 1500
+const GAME_WIDTH = MAZE_COLS * TILE_SIZE;
+const GAME_HEIGHT = MAZE_ROW_COUNT * TILE_SIZE;
+const BEST_KEY = 'radio-reload-best';
+const INTRO_KEY = 'radio-reload-intro-seen';
+const TIER_LABELS = {
+  green: { name: 'Rapid', note: 'Bass is peaking' },
+  yellow: { name: 'Normal', note: 'Bass is steady' },
+  red: { name: 'Dragging', note: 'Bass is thin' }
+};
+
+function readStorage(key, fallback) {
+  try {
+    return window.localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
   }
-];
+}
+
+function writeStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Private windows can refuse storage; the game works without it.
+  }
+}
 
 function createInitialHud() {
-  const powerMode = POWER_MODE;
   const openingStation = RADIO_STATIONS[0];
-
   return {
     stationName: openingStation?.name ?? 'Loading station',
-    stationTagline: openingStation?.tagline ?? 'Live station preview is standing by.',
+    stationTagline: openingStation?.tagline ?? '',
     broadcastMode: 'ads',
-    powerMode: powerMode.id,
-    powerModeTitle: powerMode.title,
     powerScore: 0,
     activityTier: 'red',
     activityReason: 'silence gate',
     gameMode: 'arcade',
     paused: false,
-    pulseLocked: false,
-    pulseBpm: 0,
     smoothedPulseBpm: 0,
     confidence: 0,
     pulseStrength: 0,
@@ -58,66 +59,48 @@ function createInitialHud() {
     signalState: 'silence',
     shotProfileLabel: 'Dragging',
     shotCooldownMs: 1500,
-    segmentRemaining: 0,
     score: 0,
-    recordsCollected: 0,
     kills: 0,
     ammo: 25,
+    hp: 3,
+    maxHp: 3,
     aggressionLevel: 0,
-    recordsToWin: 10,
-    killsToWin: 30,
-    statusText: 'Pick a run and the menu will preview the station feed.',
-    canShoot: false
+    floorIndex: 0,
+    floorCount: FLOORS.length,
+    floorLabel: FLOORS[0].label,
+    floorName: FLOORS[0].name,
+    floorTheme: FLOORS[0].theme,
+    floorObjective: FLOORS[0].objective,
+    floorRecords: 0,
+    recordsToOpen: FLOORS[0].recordsToOpen,
+    recordsTotal: 0,
+    elevatorOpen: false,
+    engineHp: 0,
+    engineMaxHp: 0,
+    statusText: ''
   };
 }
 
-function syncMenuHud(previousHud, phase, gameMode) {
-  const powerMode = POWER_MODE;
-  const signalLabel =
-    previousHud.signalState === 'music'
-      ? 'music'
-      : previousHud.signalState === 'speech'
-        ? 'speech'
-        : 'silence';
-
-  return {
-    ...previousHud,
-    powerMode: powerMode.id,
-    powerModeTitle: powerMode.title,
-    gameMode,
-    paused: false,
-    canShoot: false,
-    statusText:
-      phase === 'game-over'
-        ? `Previewing ${previousHud.stationName} from your last run. Current read is ${signalLabel}. Restart when ready.`
-        : 'Pick a run and the menu will preview the station feed.'
-  };
+function signalLabel(state) {
+  if (state === 'music') return 'Music';
+  if (state === 'speech') return 'Talk';
+  return 'Dead air';
 }
 
 function RadioEscapePage() {
   const gameHostRef = useRef(null);
   const gameStageRef = useRef(null);
-  const menuOverlayRef = useRef(null);
-  const menuCardRef = useRef(null);
-  const gameRef = useRef(null);
   const sceneRef = useRef(null);
   const audioRef = useRef(null);
 
-  const [selectedSessionMode, setSelectedSessionMode] = useState('arcade');
-  const [menuStep, setMenuStep] = useState('select');
-  const [sessionId, setSessionId] = useState(0);
-  const [phase, setPhase] = useState('idle');
+  const [screen, setScreen] = useState('title');
+  const [session, setSession] = useState(null);
   const [hud, setHud] = useState(() => createInitialHud());
-  const [gameOverReason, setGameOverReason] = useState('The crowd caught you.');
-  const [canvasSize, setCanvasSize] = useState({
-    width: GAME_WIDTH,
-    height: GAME_HEIGHT
-  });
-  const [menuFit, setMenuFit] = useState({
-    scale: 1,
-    width: 0,
-    height: 0
-  });
+  const [floorCard, setFloorCard] = useState(null);
+  const [runSummary, setRunSummary] = useState(null);
+  const [best, setBest] = useState(() => Number(readStorage(BEST_KEY, 0)) || 0);
+  const [introReturn, setIntroReturn] = useState('play');
+  const [canvasSize, setCanvasSize] = useState({ width: GAME_WIDTH, height: GAME_HEIGHT });
 
   useEffect(() => {
     audioRef.current = createRadioAudioController({
@@ -135,79 +118,72 @@ function RadioEscapePage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (phase === 'running') {
-      return;
+  function recordScore(summary) {
+    setRunSummary(summary);
+    if (summary.score > best) {
+      setBest(summary.score);
+      writeStorage(BEST_KEY, summary.score);
     }
-
-    setHud((currentHud) => syncMenuHud(currentHud, phase, selectedSessionMode));
-  }, [phase, selectedSessionMode]);
+  }
 
   useEffect(() => {
-    if (!sessionId || !gameHostRef.current) {
+    if (!session || !gameHostRef.current) {
       return undefined;
     }
 
     const scene = new RadioEscapeScene({
-      gameMode: selectedSessionMode,
+      gameMode: session.gameMode,
+      startFloorIndex: session.startFloorIndex,
       onHudChange: (nextHud) => {
-        startTransition(() => {
-          setHud(nextHud);
-        });
+        startTransition(() => setHud(nextHud));
       },
       onPauseChange: (paused) => {
-        startTransition(() => {
-          setHud((currentHud) => ({
-            ...currentHud,
-            paused
-          }));
-        });
+        startTransition(() => setHud((current) => ({ ...current, paused })));
       },
-      onGameOver: (reason) => {
-        setMenuStep('select');
-        setPhase('game-over');
-        setGameOverReason(reason);
+      onFloorReady: (info) => setFloorCard(info),
+      onGameOver: (summary) => {
+        recordScore(summary);
+        setScreen('game-over');
+      },
+      onVictory: (summary) => {
+        recordScore(summary);
+        setScreen('ending');
       }
     });
 
     sceneRef.current = scene;
+    if (import.meta.env.DEV) {
+      window.__radioScene = scene;
+    }
     const game = new Phaser.Game({
       type: Phaser.AUTO,
       parent: gameHostRef.current,
       width: GAME_WIDTH,
       height: GAME_HEIGHT,
-      backgroundColor: '#07090f',
-      render: {
-        antialias: false,
-        pixelArt: false
-      },
+      backgroundColor: '#07060d',
+      pixelArt: true,
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH
       },
-      physics: {
-        default: 'arcade'
-      },
       scene: [scene]
     });
 
-    gameRef.current = game;
-
     return () => {
       sceneRef.current = null;
-      gameRef.current = null;
       game.destroy(true);
     };
-  }, [sessionId, selectedSessionMode]);
+    // recordScore reads `best` through state setters only, so the session id is the real dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   useEffect(() => {
     if (!audioRef.current) {
       return;
     }
-
     audioRef.current.setBroadcast(hud.stationName);
     audioRef.current.resume();
-  }, [hud.stationName, phase]);
+  }, [hud.stationName, screen]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -238,511 +214,516 @@ function RadioEscapePage() {
       if (!stage) {
         return;
       }
-
       const bounds = stage.getBoundingClientRect();
       if (!bounds.width || !bounds.height) {
         return;
       }
-
       const scale = Math.min(bounds.width / GAME_WIDTH, bounds.height / GAME_HEIGHT);
-      const nextWidth = Math.max(1, Math.floor(GAME_WIDTH * scale));
-      const nextHeight = Math.max(1, Math.floor(GAME_HEIGHT * scale));
-
-      setCanvasSize((current) => {
-        if (current.width === nextWidth && current.height === nextHeight) {
-          return current;
-        }
-
-        return {
-          width: nextWidth,
-          height: nextHeight
-        };
-      });
+      const width = Math.max(1, Math.floor(GAME_WIDTH * scale));
+      const height = Math.max(1, Math.floor(GAME_HEIGHT * scale));
+      setCanvasSize((current) =>
+        current.width === width && current.height === height ? current : { width, height }
+      );
     }
 
     fitCanvas();
     const observer = new ResizeObserver(fitCanvas);
     observer.observe(gameStageRef.current);
-    window.addEventListener('resize', fitCanvas);
+    return () => observer.disconnect();
+  }, []);
 
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', fitCanvas);
-    };
-  }, [phase]);
-
-  useLayoutEffect(() => {
-    if (phase === 'running' || !menuOverlayRef.current || !menuCardRef.current) {
-      setMenuFit({
-        scale: 1,
-        width: 0,
-        height: 0
-      });
-      return undefined;
-    }
-
-    function fitMenu() {
-      const overlay = menuOverlayRef.current;
-      const card = menuCardRef.current;
-      if (!overlay || !card) {
-        return;
-      }
-
-      const availableWidth = Math.max(overlay.clientWidth - 24, 1);
-      const availableHeight = Math.max(overlay.clientHeight - 24, 1);
-      const naturalWidth = Math.max(card.scrollWidth, 1);
-      const naturalHeight = Math.max(card.scrollHeight, 1);
-      const nextScale = Math.min(
-        1,
-        availableWidth / naturalWidth,
-        availableHeight / naturalHeight
-      );
-
-      const nextWidth = Math.ceil(naturalWidth * nextScale);
-      const nextHeight = Math.ceil(naturalHeight * nextScale);
-
-      setMenuFit((current) => {
-        if (
-          Math.abs(current.scale - nextScale) < 0.01 &&
-          current.width === nextWidth &&
-          current.height === nextHeight
-        ) {
-          return current;
-        }
-
-        return {
-          scale: nextScale,
-          width: nextWidth,
-          height: nextHeight
-        };
-      });
-    }
-
-    fitMenu();
-    const overlayObserver = new ResizeObserver(fitMenu);
-    overlayObserver.observe(menuOverlayRef.current);
-    window.addEventListener('resize', fitMenu);
-
-    return () => {
-      overlayObserver.disconnect();
-      window.removeEventListener('resize', fitMenu);
-    };
-  }, [phase, gameOverReason]);
-
-  function startRun(gameMode = selectedSessionMode) {
+  function launch(gameMode, startFloorIndex = 0) {
     audioRef.current?.resume();
-    setSelectedSessionMode(gameMode);
-    setHud({
-      ...createInitialHud(),
-      gameMode
-    });
-    setGameOverReason('The crowd caught you.');
-    setMenuStep('select');
-    setPhase('running');
-    setSessionId((current) => current + 1);
+    setHud({ ...createInitialHud(), gameMode });
+    setFloorCard(null);
+    setRunSummary(null);
+    setScreen('playing');
+    setSession((current) => ({ id: (current?.id ?? 0) + 1, gameMode, startFloorIndex }));
   }
 
-  function openRules(gameMode) {
-    setSelectedSessionMode(gameMode);
-    setMenuStep('confirm');
+  function startDescent() {
+    if (readStorage(INTRO_KEY, '') !== 'yes') {
+      setIntroReturn('play');
+      setScreen('intro');
+      return;
+    }
+    launch('arcade', 0);
   }
 
-  function resumeRun() {
+  function finishIntro() {
+    writeStorage(INTRO_KEY, 'yes');
+    if (introReturn === 'play') {
+      launch('arcade', 0);
+    } else {
+      setScreen('title');
+    }
+  }
+
+  function goTitle() {
     sceneRef.current?.setPaused(false);
+    setSession(null);
+    setFloorCard(null);
+    setScreen('title');
+    setHud((current) => ({ ...current, paused: false }));
   }
 
-  function returnHome() {
-    sceneRef.current?.setPaused(false);
-    setMenuStep('select');
-    setPhase('idle');
-    setHud((currentHud) => syncMenuHud(currentHud, 'idle', selectedSessionMode));
+  function beginFloor() {
+    sceneRef.current?.beginFloor();
+    setFloorCard(null);
   }
 
-  const phaseClass = phase === 'running' ? 'running-phase' : 'menu-phase';
+  // Floor cards and the title screen answer to Space and Enter.
+  useEffect(() => {
+    if (screen === 'playing' && floorCard) {
+      const onKey = (event) => {
+        if (event.code === 'Space' || event.code === 'Enter') {
+          event.preventDefault();
+          beginFloor();
+        }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }
+    if (screen === 'title') {
+      const onKey = (event) => {
+        if (event.code === 'Enter') {
+          event.preventDefault();
+          startDescent();
+        }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }
+    return undefined;
+  });
+
+  const inRun = Boolean(session) && screen !== 'title' && screen !== 'intro';
+  const tier = TIER_COLORS[hud.activityTier] ?? TIER_COLORS.red;
+  const tierLabel = TIER_LABELS[hud.activityTier] ?? TIER_LABELS.red;
+  const isTestLab = hud.gameMode === 'test-lab';
+  const isFinalFloor = hud.engineMaxHp > 0;
 
   return (
-    <main className={`radio-page ${phaseClass}`}>
-      <header className="page-top">
-        <p className="radio-kicker">Arcade Prototype</p>
-        <h1>Radio Reload: Dead Air Run</h1>
-        <p className="radio-lead">
-          The live stream's bass arms the weapon: heavy low end means rapid
-          fire, thin low end slows it down, and bullet speed always stays fast.
-        </p>
+    <main className={`rr-app ${inRun ? 'in-run' : 'in-menu'}`} style={{ '--tier': tier.css }}>
+      <header className="rr-topbar">
+        <button className="rr-brand" onClick={goTitle} type="button">
+          <PixelSprite name="record" scale={2} />
+          <span>Radio Reload</span>
+        </button>
+        <div className="rr-onair">
+          <span className={`onair-light ${hud.signalState}`}>On Air</span>
+          <strong>{hud.stationName}</strong>
+          <span className="rr-tagline">{hud.stationTagline}</span>
+        </div>
+        {inRun ? (
+          <div className="rr-floorbadge">
+            <span>{hud.floorLabel}</span>
+            <strong>{hud.floorName}</strong>
+          </div>
+        ) : (
+          <div className="rr-floorbadge">
+            <span>Best</span>
+            <strong>{best}</strong>
+          </div>
+        )}
       </header>
 
-      <section className="radio-hero">
-        <div className="radio-summary">
-          <div>
-            <span>Current Signal</span>
-            <strong className={hud.broadcastMode}>
-              {hud.signalState === 'music'
-                ? 'Music'
-                : hud.signalState === 'speech'
-                  ? 'Speech'
-                  : 'Silence'}
-            </strong>
-          </div>
-          <div>
-            <span>Records Flipped</span>
-            <strong>{hud.recordsCollected}/{hud.recordsToWin}</strong>
-          </div>
-          <div>
-            <span>Bad Guys Dropped</span>
-            <strong>{hud.kills}/{hud.killsToWin}</strong>
-          </div>
-          <div>
-            <span>Ammo</span>
-            <strong>{hud.ammo}</strong>
-          </div>
-        </div>
+      <section className="rr-body">
+        <div className="rr-stage" ref={gameStageRef}>
+          <div
+            className="rr-screen"
+            style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px` }}
+          >
+            <div className="rr-canvas" ref={gameHostRef} />
 
-        <div className="hero-note">
-          <p className="panel-chip">Core Loop</p>
-          <p>
-            Build power from the live signal, keep lanes open, and use record
-            pickups to flip stations until the bass starts feeding the gun.
-          </p>
-        </div>
-      </section>
+            {screen === 'title' ? (
+              <TitleScreen
+                best={best}
+                onHowTo={() => setScreen('how')}
+                onIntro={() => {
+                  setIntroReturn('title');
+                  setScreen('intro');
+                }}
+                onStart={startDescent}
+                onTestLab={() => launch('test-lab', 0)}
+              />
+            ) : null}
 
-      <section className="radio-layout">
-        <div className="arena-panel">
-          <div className="arena-header">
-            <div>
-              <p className="panel-chip">Playfield</p>
-              <h2>Dead Air Run</h2>
-            </div>
-            <button
-              className="arcade-button"
-              onClick={() => startRun(selectedSessionMode)}
-              type="button"
-            >
-              {phase === 'running'
-                ? selectedSessionMode === 'test-lab'
-                  ? 'Restart Test Lab'
-                  : 'Restart Run'
-                : phase === 'game-over'
-                  ? selectedSessionMode === 'test-lab'
-                    ? 'Test Again'
-                    : 'Run Again'
-                  : selectedSessionMode === 'test-lab'
-                    ? 'Start Test Lab'
-                    : 'Start Broadcast'}
-            </button>
-          </div>
+            {screen === 'how' ? <HowToScreen onBack={() => setScreen('title')} /> : null}
 
-          <div className="game-stage" ref={gameStageRef}>
-            <div
-              className="game-canvas-shell"
-              ref={gameHostRef}
-              style={{
-                width: `${canvasSize.width}px`,
-                height: `${canvasSize.height}px`
-              }}
-            />
+            {screen === 'intro' ? (
+              <Cutscene
+                finalLabel={introReturn === 'play' ? 'Start' : 'Back'}
+                onDone={finishIntro}
+                panels={INTRO_PANELS}
+              />
+            ) : null}
 
-            {phase !== 'running' || hud.paused ? (
-              <div className="game-overlay" ref={menuOverlayRef}>
-                <div
-                  className="menu-scale-shell"
-                  style={{
-                    width: menuFit.width ? `${menuFit.width}px` : undefined,
-                    height: menuFit.height ? `${menuFit.height}px` : undefined
-                  }}
-                >
-                  <div
-                    className="overlay-card menu-card"
-                    ref={menuCardRef}
-                    style={{
-                      transform: `scale(${menuFit.scale})`,
-                      transformOrigin: 'top left'
-                    }}
-                  >
-                    <p className="panel-chip">
-                      {phase === 'game-over' ? 'Game Over' : hud.paused ? 'Paused' : 'Start Menu'}
-                    </p>
-                    <h3>
-                      {phase === 'game-over'
-                        ? gameOverReason
-                        : hud.paused
-                          ? 'Broadcast paused.'
-                          : 'The station\'s bass powers your gun.'}
-                    </h3>
-                    <p>
-                      {phase === 'game-over'
-                        ? 'Pick a run and go again when you\'re ready.'
-                        : hud.paused
-                          ? 'Press Esc again or use Resume to jump back into the station.'
-                          : 'Move with WASD or arrows. Press Space to shoot. Slow power means fewer shots, but bullets always fly fast.'}
-                    </p>
+            {screen === 'playing' && floorCard ? (
+              <FloorCard floor={floorCard} isTestLab={isTestLab} onBegin={beginFloor} />
+            ) : null}
 
-                    {!hud.paused ? (
-                      <>
-                        {menuStep === 'select' ? (
-                          <>
-                            <div className="mode-grid session-grid">
-                              <button
-                                className={`mode-option ${selectedSessionMode === 'arcade' ? 'selected' : ''}`}
-                                onClick={() => setSelectedSessionMode('arcade')}
-                                type="button"
-                              >
-                                <span className="mode-option-index">A</span>
-                                <strong>Arcade Run</strong>
-                                <p>Normal run with enemies, pickups, and game over pressure.</p>
-                              </button>
-                              <button
-                                className={`mode-option ${selectedSessionMode === 'test-lab' ? 'selected' : ''}`}
-                                onClick={() => setSelectedSessionMode('test-lab')}
-                                type="button"
-                              >
-                                <span className="mode-option-index">T</span>
-                                <strong>Test Lab</strong>
-                                <p>No enemies. Walk the map, listen, shoot, and press R to retune stations.</p>
-                              </button>
-                            </div>
-
-                            <div className="cadence-windows" aria-label="Cadence preview">
-                              {CADENCE_WINDOWS.map((window) => (
-                                <article
-                                  className="cadence-window"
-                                  key={window.label}
-                                  style={{
-                                    '--cadence-color': window.colorHex,
-                                    '--cadence-speed': `${window.shotGapMs}ms`
-                                  }}
-                                >
-                                  <p className="panel-chip">Cadence Window</p>
-                                  <strong>{window.label}</strong>
-                                  <div className="cadence-window-preview" aria-hidden="true">
-                                    <div className="cadence-window-wall cadence-window-wall-left" />
-                                    <div className="cadence-window-wall cadence-window-wall-right" />
-                                    <div className="cadence-window-floor" />
-                                    <div className="cadence-window-bullets">
-                                      <span className="cadence-window-bullet cadence-window-bullet-a" />
-                                      <span className="cadence-window-bullet cadence-window-bullet-b" />
-                                      <span className="cadence-window-bullet cadence-window-bullet-c" />
-                                    </div>
-                                    <div className="cadence-window-hero">
-                                      <span className="cadence-window-shadow" />
-                                      <span className="cadence-window-legs" />
-                                      <span className="cadence-window-body" />
-                                      <span className="cadence-window-head" />
-                                      <span className="cadence-window-arm" />
-                                      <span className="cadence-window-gun" />
-                                      <span className="cadence-window-flash" />
-                                    </div>
-                                    <div className="cadence-window-target" />
-                                  </div>
-                                  <div className="cadence-window-color">
-                                    <span
-                                      className="cadence-window-swatch"
-                                      style={{ backgroundColor: window.colorHex }}
-                                    />
-                                    <span>{window.colorName}</span>
-                                  </div>
-                                  <p>{window.shotGapMs}ms shot gap</p>
-                                </article>
-                              ))}
-                            </div>
-                          </>
-                        ) : (
-                          <section className="rules-sheet">
-                            <p className="panel-chip">Run Briefing</p>
-                            <div className="rules-grid">
-                              <div className="rules-block">
-                                <span>Mode</span>
-                                <strong>{selectedSessionMode === 'test-lab' ? 'Test Lab' : 'Arcade Run'}</strong>
-                                <p>
-                                  {selectedSessionMode === 'test-lab'
-                                    ? 'Use the full map with records and live cadence, but without enemy pressure.'
-                                    : 'Fight through the map with enemies, ammo management, and station retunes.'}
-                                </p>
-                              </div>
-                              <div className="rules-block">
-                                <span>How To Win</span>
-                                <strong>30 kills or 10 records</strong>
-                                <p>Reach either target first to clear the run.</p>
-                              </div>
-                              <div className="rules-block">
-                                <span>Ammo</span>
-                                <strong>25 start / +15 record / +5 drop</strong>
-                                <p>Every shot costs one bullet. Some dropped enemies leave extra ammo.</p>
-                              </div>
-                              <div className="rules-block">
-                                <span>Danger</span>
-                                <strong>Enemies scale every 5 kills</strong>
-                                <p>Bad guys get more aggressive as your kill count rises.</p>
-                              </div>
-                            </div>
-                            <ul className="rule-list menu-rule-list">
-                              <li>Move with WASD or the arrow keys.</li>
-                              <li>Press Space to shoot.</li>
-                              <li>Press Esc to pause and return home.</li>
-                              <li>Cadence changes shot frequency only. Bullet speed always stays fast.</li>
-                            </ul>
-                          </section>
-                        )}
-                      </>
-                    ) : null}
-
-                    <div className="menu-actions">
-                      {hud.paused ? (
-                        <>
-                          <button className="arcade-button" onClick={resumeRun} type="button">
-                            Resume
-                          </button>
-                          <button className="arcade-button alt" onClick={returnHome} type="button">
-                            Return Home
-                          </button>
-                        </>
-                      ) : (
-                        menuStep === 'select' ? (
-                          <>
-                            <button
-                              className="arcade-button"
-                              onClick={() => openRules('arcade')}
-                              type="button"
-                            >
-                              {phase === 'game-over' ? 'Arcade Rules' : 'Start Arcade'}
-                            </button>
-                            <button
-                              className="arcade-button alt"
-                              onClick={() => openRules('test-lab')}
-                              type="button"
-                            >
-                              {phase === 'game-over' ? 'Test Lab Rules' : 'Open Test Lab'}
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              className="arcade-button"
-                              onClick={() => startRun(selectedSessionMode)}
-                              type="button"
-                            >
-                              Start Game
-                            </button>
-                            <button
-                              className="arcade-button alt"
-                              onClick={() => setMenuStep('select')}
-                              type="button"
-                            >
-                              Back
-                            </button>
-                          </>
-                        )
-                      )}
-                    </div>
+            {screen === 'playing' && hud.paused ? (
+              <div className="rr-overlay dim">
+                <div className="rr-card compact">
+                  <p className="rr-kicker">Paused</p>
+                  <h2>Broadcast on hold</h2>
+                  <p>Press Esc or Resume to jump back in.</p>
+                  <div className="rr-actions">
+                    <button className="rr-button" onClick={() => sceneRef.current?.setPaused(false)} type="button">
+                      Resume
+                    </button>
+                    <button className="rr-button ghost" onClick={goTitle} type="button">
+                      Quit to Title
+                    </button>
                   </div>
                 </div>
               </div>
             ) : null}
+
+            {screen === 'game-over' && runSummary ? (
+              <GameOverScreen
+                onContinue={() => launch('arcade', runSummary.floorIndex)}
+                onRestart={() => launch('arcade', 0)}
+                onTitle={goTitle}
+                summary={runSummary}
+              />
+            ) : null}
+
+            {screen === 'ending' ? (
+              <Cutscene finalLabel="Results" onDone={() => setScreen('results')} panels={ENDING_PANELS} />
+            ) : null}
+
+            {screen === 'results' && runSummary ? (
+              <ResultsScreen
+                best={best}
+                onAgain={() => launch('arcade', 0)}
+                onTitle={goTitle}
+                summary={runSummary}
+              />
+            ) : null}
           </div>
         </div>
 
-        <aside className="broadcast-panel">
-          <section className="broadcast-card">
-            <p className="panel-chip">On Air</p>
-            <h3>{hud.stationName}</h3>
-            <p className="broadcast-tagline">{hud.stationTagline}</p>
-            <div className={`broadcast-mode ${hud.broadcastMode}`}>
-              <span>{hud.powerModeTitle} / {hud.gameMode === 'test-lab' ? 'Test Lab' : 'Arcade'}</span>
-              <strong>{hud.shotProfileLabel} fire</strong>
-            </div>
-            <p className="status-copy">
-              Signal state: {hud.signalState} / tier: {hud.activityTier}
-            </p>
-            <p className="status-copy">
-              Trigger: {hud.activityReason}
-            </p>
-            <p className="status-copy">{hud.statusText}</p>
-            <p className="status-copy">
-              Tempo: {hud.smoothedPulseBpm > 0 ? `about ${hud.smoothedPulseBpm} BPM` : 'still reading'}
-            </p>
-            <div className="pulse-meter" aria-label="Power meter">
-              <div className="pulse-meter-track">
-                <div
-                  className={`pulse-meter-fill ${hud.broadcastMode === 'music' ? 'locked' : ''}`}
-                  style={{ width: `${Math.max(8, Math.round(hud.powerScore * 100))}%` }}
-                />
+        {inRun ? (
+          <aside className="rr-hud">
+            <section className="hud-block">
+              <p className="hud-label">The Descent</p>
+              <ol className="floor-pips">
+                {FLOORS.map((floor, index) => (
+                  <li
+                    className={
+                      isTestLab
+                        ? ''
+                        : index < hud.floorIndex
+                          ? 'done'
+                          : index === hud.floorIndex
+                            ? 'current'
+                            : ''
+                    }
+                    key={floor.id}
+                    title={floor.name}
+                  >
+                    {floor.label.replace('Floor ', '')}
+                  </li>
+                ))}
+              </ol>
+              <div className="hp-row" aria-label={`${hud.hp} of ${hud.maxHp} signal bars`}>
+                <span className="hud-label">Signal</span>
+                <span className="hp-bars">
+                  {Array.from({ length: hud.maxHp }, (_, bar) => (
+                    <i className={bar < hud.hp ? 'on' : ''} key={bar} style={{ height: `${10 + bar * 6}px` }} />
+                  ))}
+                </span>
               </div>
-              <div className="pulse-meter-labels">
-                <span>Power score</span>
-                <strong>{Math.round(hud.powerScore * 100)}%</strong>
-              </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="broadcast-card metrics">
-            <div>
-              <span>Score</span>
-              <strong>{hud.score}</strong>
-            </div>
-            <div>
-              <span>Ammo</span>
-              <strong>{hud.ammo}</strong>
-            </div>
-            <div>
-              <span>Weapon</span>
-              <strong>{hud.shotProfileLabel}</strong>
-            </div>
-            <div>
-              <span>Shot Gap</span>
-              <strong>{Math.round(hud.shotCooldownMs)}ms</strong>
-            </div>
-            <div>
-              <span>Tier</span>
-              <strong>{hud.activityTier}</strong>
-            </div>
-            <div>
-              <span>Trigger</span>
-              <strong>{hud.activityReason}</strong>
-            </div>
-            <div>
-              <span>Spectral Flux</span>
-              <strong>{Math.round(hud.spectralFlux * 100)}%</strong>
-            </div>
-            <div>
-              <span>Low-End</span>
-              <strong>{Math.round(hud.lowEndEnergy * 100)}%</strong>
-            </div>
-            <div>
-              <span>Onset Density</span>
-              <strong>{Math.round(hud.onsetDensity * 100)}%</strong>
-            </div>
-            <div>
-              <span>Pulse Confidence</span>
-              <strong>{Math.round(hud.confidence * 100)}%</strong>
-            </div>
-            <div>
-              <span>RMS</span>
-              <strong>{Math.round(hud.rms * 100)}%</strong>
-            </div>
-            <div>
-              <span>ZCR</span>
-              <strong>{Math.round(hud.zeroCrossingRate * 100)}%</strong>
-            </div>
-            <div>
-              <span>Speech Band</span>
-              <strong>{Math.round(hud.speechBandRatio * 100)}%</strong>
-            </div>
-            <div>
-              <span>Signal State</span>
-              <strong>{hud.signalState}</strong>
-            </div>
-            <div>
-              <span>Aggression</span>
-              <strong>Lv {hud.aggressionLevel}</strong>
-            </div>
-            <div>
-              <span>Win Target</span>
-              <strong>{hud.killsToWin} kills / {hud.recordsToWin} records</strong>
-            </div>
-          </section>
-        </aside>
+            <section className="hud-block tune-ray">
+              <div className="tune-ray-head">
+                <PixelSprite name="tune-ray" scale={3} />
+                <div>
+                  <p className="hud-label">Tune Ray</p>
+                  <strong className="tier-name">{tierLabel.name}</strong>
+                </div>
+              </div>
+              <div className="meter">
+                <div className="meter-fill" style={{ width: `${Math.max(4, Math.round(hud.powerScore * 100))}%` }} />
+              </div>
+              <div className="meter-caption">
+                <span>{signalLabel(hud.signalState)} · {tierLabel.note}</span>
+                <span>{hud.shotCooldownMs}ms</span>
+              </div>
+            </section>
+
+            <section className="hud-block stat-grid">
+              <div>
+                <PixelSprite name="battery" scale={2} />
+                <span className="hud-label">Charge</span>
+                <strong className={hud.ammo <= 5 ? 'warn' : ''}>{hud.ammo}</strong>
+              </div>
+              <div>
+                <PixelSprite name="goon-0" scale={2} />
+                <span className="hud-label">Goons</span>
+                <strong>{hud.kills}</strong>
+              </div>
+              <div className="wide">
+                <span className="hud-label">Score</span>
+                <strong>{hud.score.toLocaleString()}</strong>
+              </div>
+            </section>
+
+            <section className="hud-block objective">
+              <p className="hud-label">Objective</p>
+              {isFinalFloor ? (
+                <>
+                  <p className="objective-text">Destroy the Dead Air Engine</p>
+                  <div className="meter engine">
+                    <div
+                      className="meter-fill"
+                      style={{ width: `${Math.round((hud.engineHp / hud.engineMaxHp) * 100)}%` }}
+                    />
+                  </div>
+                </>
+              ) : isTestLab ? (
+                <p className="objective-text">Free play. Press R to retune. {hud.recordsTotal} records flipped.</p>
+              ) : (
+                <>
+                  <div className="record-pips">
+                    {Array.from({ length: hud.recordsToOpen }, (_, pip) => (
+                      <PixelSprite
+                        className={pip < hud.floorRecords ? 'got' : ''}
+                        key={pip}
+                        name="record"
+                        scale={2}
+                      />
+                    ))}
+                  </div>
+                  <p className={`objective-text ${hud.elevatorOpen ? 'go' : ''}`}>
+                    {hud.elevatorOpen
+                      ? 'Elevator cued! Head to the top wall.'
+                      : `${hud.floorRecords}/${hud.recordsToOpen} K-records to cue the elevator`}
+                  </p>
+                </>
+              )}
+            </section>
+
+            <p className="hud-status">{hud.statusText}</p>
+
+            {isTestLab ? (
+              <section className="hud-block debug-grid">
+                <p className="hud-label">Signal Lab</p>
+                {[
+                  ['Trigger', hud.activityReason],
+                  ['Low-end', `${Math.round(hud.lowEndEnergy * 100)}%`],
+                  ['Flux', `${Math.round(hud.spectralFlux * 100)}%`],
+                  ['Onsets', `${Math.round(hud.onsetDensity * 100)}%`],
+                  ['Pulse conf.', `${Math.round(hud.confidence * 100)}%`],
+                  ['RMS', `${Math.round(hud.rms * 100)}%`],
+                  ['ZCR', `${Math.round(hud.zeroCrossingRate * 100)}%`],
+                  ['Speech band', `${Math.round(hud.speechBandRatio * 100)}%`],
+                  ['Tempo', hud.smoothedPulseBpm ? `${hud.smoothedPulseBpm} BPM` : 'reading']
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </section>
+            ) : null}
+          </aside>
+        ) : null}
       </section>
     </main>
+  );
+}
+
+function TitleScreen({ best, onStart, onTestLab, onHowTo, onIntro }) {
+  return (
+    <div className="rr-overlay title-screen">
+      <PanelCanvas className="title-backdrop" scene="tower" />
+      <div className="title-content">
+        <p className="rr-kicker">A Tunez Tower Story</p>
+        <h1 className="logo">
+          <span>Radio</span>
+          <span>Reload</span>
+        </h1>
+        <p className="logo-sub">Dead Air Run</p>
+        <div className="title-cast">
+          <PixelSprite name="goon-0" scale={4} />
+          <PixelSprite className="hero-bob" name="spin-down-0" scale={6} />
+          <PixelSprite name="brute-0" scale={4} />
+        </div>
+        <div className="rr-actions stacked">
+          <button className="rr-button big" onClick={onStart} type="button">
+            Start the Descent
+          </button>
+          <div className="rr-actions">
+            <button className="rr-button ghost" onClick={onHowTo} type="button">
+              How to Play
+            </button>
+            <button className="rr-button ghost" onClick={onIntro} type="button">
+              Watch Intro
+            </button>
+            <button className="rr-button ghost" onClick={onTestLab} type="button">
+              Test Lab
+            </button>
+          </div>
+        </div>
+        <p className="title-foot">
+          <span className="blink">Press Enter</span>
+          {best ? <span>Best score {best.toLocaleString()}</span> : null}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function HowToScreen({ onBack }) {
+  return (
+    <div className="rr-overlay dim scroll">
+      <div className="rr-card wide">
+        <p className="rr-kicker">Field Guide</p>
+        <h2>How to play</h2>
+        <ul className="howto-list">
+          {HOW_TO_PLAY.map((item) => (
+            <li key={item.keys}>
+              <kbd>{item.keys}</kbd>
+              <span>{item.text}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="guide-grid">
+          <figure>
+            <PixelSprite name="spin-down-0" scale={4} />
+            <figcaption><strong>Spin</strong>Kilo's robot DJ. That's you.</figcaption>
+          </figure>
+          <figure>
+            <PixelSprite name="goon-0" scale={4} />
+            <figcaption><strong>Clef Goon</strong>One hit. Some chase, some cut you off, some drift.</figcaption>
+          </figure>
+          <figure>
+            <PixelSprite name="brute-0" scale={3} />
+            <figcaption><strong>Clef Brute</strong>Three hits. Slow, and always drops a battery.</figcaption>
+          </figure>
+          <figure>
+            <PixelSprite name="record" scale={4} />
+            <figcaption><strong>K-record</strong>+15 charge, new station, opens the elevator.</figcaption>
+          </figure>
+          <figure>
+            <PixelSprite name="battery" scale={4} />
+            <figcaption><strong>Battery</strong>+5 charge.</figcaption>
+          </figure>
+          <figure>
+            <PixelSprite name="engine-0" scale={1} />
+            <figcaption><strong>Dead Air Engine</strong>Bassolini's jammer. Blast it apart on B3.</figcaption>
+          </figure>
+        </div>
+        <div className="tier-legend">
+          {Object.entries(TIER_LABELS).map(([key, value]) => (
+            <span key={key} style={{ '--swatch': TIER_COLORS[key].css }}>
+              <i /> {value.name}: {value.note.toLowerCase()}
+            </span>
+          ))}
+        </div>
+        <div className="rr-actions">
+          <button className="rr-button" onClick={onBack} type="button">
+            Back
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FloorCard({ floor, isTestLab, onBegin }) {
+  return (
+    <div className={`rr-overlay floor-card theme-${floor.theme}`} onClick={onBegin} role="presentation">
+      <div className="floor-card-inner">
+        <p className="rr-kicker">{isTestLab ? 'Test Lab' : `Stop ${floor.floorIndex + 1} of ${floor.floorCount}`}</p>
+        <p className="floor-number">{floor.label}</p>
+        <h2>{floor.name}</h2>
+        <p className="floor-flavor">{floor.flavor}</p>
+        <p className="floor-objective">{floor.objective}</p>
+        <button className="rr-button big" onClick={onBegin} type="button">
+          Drop the needle
+        </button>
+        <p className="title-foot">
+          <span className="blink">Space to start</span>
+          <span>Move WASD · Fire Space · Pause Esc</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function GameOverScreen({ summary, onContinue, onRestart, onTitle }) {
+  const [line] = useState(() => GAME_OVER_LINES[Math.floor(Math.random() * GAME_OVER_LINES.length)]);
+  return (
+    <div className="rr-overlay game-over">
+      <PanelCanvas className="game-over-panel" scene="captive" />
+      <div className="game-over-content">
+        <p className="rr-kicker">{summary.reason}</p>
+        <h2 className="tune-in">Tune in again?</h2>
+        <p>{line}</p>
+        <p className="summary-line">
+          Reached {summary.floorLabel} · {summary.score.toLocaleString()} pts · {summary.kills} goons ·{' '}
+          {summary.recordsTotal} records
+        </p>
+        <div className="rr-actions">
+          <button className="rr-button big" onClick={onContinue} type="button">
+            Continue from {summary.floorLabel}
+          </button>
+          {summary.floorIndex > 0 ? (
+            <button className="rr-button ghost" onClick={onRestart} type="button">
+              Restart at Floor 50
+            </button>
+          ) : null}
+          <button className="rr-button ghost" onClick={onTitle} type="button">
+            Title
+          </button>
+        </div>
+        <p className="title-foot">Continuing resets your score.</p>
+      </div>
+    </div>
+  );
+}
+
+function ResultsScreen({ summary, best, onAgain, onTitle }) {
+  return (
+    <div className="rr-overlay results">
+      <PanelCanvas className="title-backdrop" scene="dawn" />
+      <div className="rr-card">
+        <p className="rr-kicker">Broadcast restored</p>
+        <h2>Kilo is home.</h2>
+        <div className="results-grid">
+          <div>
+            <span>Score</span>
+            <strong>{summary.score.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Goons dropped</span>
+            <strong>{summary.kills}</strong>
+          </div>
+          <div>
+            <span>K-records</span>
+            <strong>{summary.recordsTotal}</strong>
+          </div>
+          <div>
+            <span>Best</span>
+            <strong>{best.toLocaleString()}</strong>
+          </div>
+        </div>
+        <p>Bassolini got away. The dial won't stay quiet for long.</p>
+        <div className="rr-actions">
+          <button className="rr-button big" onClick={onAgain} type="button">
+            Run it back
+          </button>
+          <button className="rr-button ghost" onClick={onTitle} type="button">
+            Title
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

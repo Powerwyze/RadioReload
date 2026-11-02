@@ -27,6 +27,7 @@ any narrative or visual content.
 | `src/game/art/textures.js` | Turns grids into Phaser textures and animations, and into data URLs for React. |
 | `src/game/art/cutscenes.js` | 256×144 canvas painters for the story panels. |
 | `src/pages/RadioEscapePage.jsx` | Screens (title, cutscenes, floor cards, game over, results) and the HUD. |
+| `docs/designs/` | Feature design docs and Goldfish reviews, written with the `/game-design` skill (`.claude/skills/game-design/`, reviewers in `.claude/agents/gf-*.md`). |
 
 ## Rules
 - **Art is code.** Never add binary sprite sheets. Change a sprite by editing its grid in
